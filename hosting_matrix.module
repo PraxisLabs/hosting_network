@@ -8,14 +8,14 @@
 function hosting_matrix_menu() {
   $items = array();
   $items['admin/hosting/matrix'] = array(
-    'title' => 'Server matrix',
+    'title' => 'Server Matrix settings',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_matrix_settings'),
     'type' => MENU_LOCAL_TASK,
   );
 
   $items['hosting/matrix_clients'] = array(
-    'title' => 'Server Matrix settings',
+    'title' => 'Server matrix',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_matrix_clients_form'),
     'access callback' => TRUE,
@@ -47,9 +47,17 @@ function hosting_matrix_clients_form($form, &$form_state) {
 }
 
 function _hosting_matrix_get_server_markup($nid, $hostname) {
+  $tasks = hosting_matrix_get_task_list($nid);
   $platforms = hosting_matrix_get_platform_list($hostname);
 
-  return theme('hosting_matrix_platform_list', array('platforms' => $platforms));
+  $html = '<div>';
+  $html .= theme('hosting_matrix_platform_list', array('platforms' => $platforms));
+  $html .= '</div>';
+  $html .= '<div>';
+  $html .= hosting_matrix_task_table($tasks);
+  $html .= '</div>';
+
+  return $html;
 }
 
 function hosting_matrix_theme($existing, $type, $theme, $path) {
@@ -78,7 +86,8 @@ function theme_hosting_matrix_platform_list($variables) {
     $row = array();
     $row[] = array(
       'class' => array('hosting-status'),
-      'data' => $node->title,
+      // TODO
+      'data' => '<a href="/todo">' . $node->title . '</a>',
     );
     $release = sprintf("%s %s", $node->release->title, $node->release->version);
     $row[] = $release;
@@ -117,7 +126,6 @@ function hosting_matrix_get_platform_list($host) {
     $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
     $options['headers']['X-CSRF-Token'] = $data->token;
   
-    // Get info about a user 
     $data = array();
     $options['data'] = http_build_query($data, '', '&');
     $options['method'] = 'GET';
@@ -146,6 +154,28 @@ function hosting_matrix_get_platform_list($host) {
   }
 
   return $platforms;
+}
+
+function hosting_matrix_get_task_list($nid) {
+  $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
+
+  $data = array();
+  $response = hosting_matrix_connect($base_url, $data);
+
+  $platforms = array();
+
+  if ($response->code == 200) {
+    // Use the cookie and the Token for the POST request
+    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
+    $options['headers']['X-CSRF-Token'] = $data->token;
+
+    $options['data'] = http_build_query(array('nid' => $nid,), '', '&');
+    $options['method'] = 'POST';
+    $response = drupal_http_request($base_url . '/hosting_task/get_task_list', $options);
+    $tasks = json_decode($response->data);
+
+    return (array) $tasks;
+  }  
 }
 
 function hosting_matrix_connect($base_url, &$data) {
@@ -197,4 +227,56 @@ function hosting_matrix_hosting_service_type() {
  */
 function hosting_matrix_hosting_service() {
   return array('hostmaster' => 'matrix_client'); // Service implementation => service type.
+}
+
+function hosting_matrix_task_table($tasklist) {
+  $output = '';
+
+  $headers[] = t('Task');
+  $headers[] = array(
+    'data' => t('Actions'),
+    'class' => array('hosting-actions'),
+  );
+
+  $rows = array();
+
+  foreach ($tasklist as $task => $info) {
+    $row = array();
+
+    $info = (array) $info;
+
+    if (!isset($info['nid']) && !$info['task_permitted']) {
+      // just don't show those tasks, since we'll not be able to run them
+      continue;
+    }
+
+    $row['type'] = array(
+      'data' => $info['title'],
+      'class' => array('hosting-status'),
+    );
+    $actions = array();
+
+
+    // TODO: The buttons, they do nothing.
+
+    if (isset($info['task_status']) && ($info['task_status'] == 0)) {
+      $actions['cancel'] = _hosting_task_button(t('Cancel'), sprintf("hosting/tasks/%d/cancel", $info['nid']), t("Cancel the task and remove it from the queue"), 'hosting-button-stop', !$info['task_permitted']);
+    }
+    else {
+      $actions['run'] = _hosting_task_button(t('Run'), sprintf("hosting_confirm/%d/%s_%s", 'TODO', 'TODO', $task), $info['description'], 'hosting-button-run', $info['task_permitted'], $info['dialog']);
+    }
+
+    $actions['log'] = _hosting_task_button(t('View'), isset($info['nid']) ? 'hosting/task/' . $info['nid'] : '<front>', t("Display the task log"), 'hosting-button-log', isset($info['nid']), TRUE, FALSE);
+    $row['actions'] = array(
+      'data' => implode('', $actions),
+      'class' => array('hosting-actions'),
+    );
+
+    $rows[] = array(
+      'data' => $row,
+      'class' => array($info['class']),
+    );
+  }
+  $output .= theme('table', array('header' => $headers, 'rows' => $rows, 'attributes' => array('class' => array('hosting-table'))));
+  return $output;
 }
