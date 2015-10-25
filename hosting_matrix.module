@@ -22,7 +22,66 @@ function hosting_matrix_menu() {
     'type' => MENU_NORMAL_ITEM,
   );
 
+  $items['hosting_matrix/task/%/%'] = array(
+    'page callback' => 'hosting_matrix_view_task',
+    'page arguments' => array(2, 3),
+    // TODO: Permission
+    'access arguments' => array('access task logs'),
+  );
+
   return $items;
+}
+
+function hosting_matrix_view_task($server_nid, $task_nid) {
+  $node = hosting_matrix_get_task($server_nid, $task_nid);
+
+  if ($node) {
+    $log = hosting_matrix_get_task_log($server_nid, $task_nid);
+
+    $html = _hosting_matrix_task_log_table($log);
+    return drupal_render($html);
+  }
+}
+
+function hosting_matrix_get_task($server_nid, $task_nid) {
+  // TODO
+  $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
+
+  $data = array();
+  $response = hosting_matrix_connect($base_url, $data);
+
+  $platforms = array();
+
+  if ($response->code == 200) {
+    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
+    $options['method'] = 'GET';
+
+    $response = drupal_http_request($base_url . '/hosting_task/' . $task_nid, $options);
+    return json_decode($response->data);
+  }
+}
+
+function hosting_matrix_get_task_log($server_nid, $task_nid) {
+  // TODO
+  $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
+
+  $data = array();
+  $response = hosting_matrix_connect($base_url, $data);
+
+  $platforms = array();
+
+  if ($response->code == 200) {
+    // Use the cookie and the Token for the POST request
+    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
+    $options['headers']['X-CSRF-Token'] = $data->token;
+
+    $options['data'] = http_build_query(array('nid' => $task_nid,), '', '&');
+    $options['method'] = 'POST';
+    $response = drupal_http_request($base_url . '/hosting_task/get_task_log', $options);
+    $messages = json_decode($response->data);
+
+    return $messages;
+  }
 }
 
 function hosting_matrix_clients_form($form, &$form_state) {
@@ -50,11 +109,12 @@ function _hosting_matrix_get_server_markup($nid, $hostname) {
   $tasks = hosting_matrix_get_task_list($nid);
   $platforms = hosting_matrix_get_platform_list($hostname);
 
-  $html = '<div>';
-  $html .= theme('hosting_matrix_platform_list', array('platforms' => $platforms));
+  $html = '';
+  $html .= '<div>';
+  $html .= hosting_matrix_task_table($tasks, $nid);
   $html .= '</div>';
   $html .= '<div>';
-  $html .= hosting_matrix_task_table($tasks);
+  $html .= theme('hosting_matrix_platform_list', array('platforms' => $platforms));
   $html .= '</div>';
 
   return $html;
@@ -229,7 +289,7 @@ function hosting_matrix_hosting_service() {
   return array('hostmaster' => 'matrix_client'); // Service implementation => service type.
 }
 
-function hosting_matrix_task_table($tasklist) {
+function hosting_matrix_task_table($tasklist, $server_nid) {
   $output = '';
 
   $headers[] = t('Task');
@@ -260,13 +320,15 @@ function hosting_matrix_task_table($tasklist) {
     // TODO: The buttons, they do nothing.
 
     if (isset($info['task_status']) && ($info['task_status'] == 0)) {
-      $actions['cancel'] = _hosting_task_button(t('Cancel'), sprintf("hosting/tasks/%d/cancel", $info['nid']), t("Cancel the task and remove it from the queue"), 'hosting-button-stop', !$info['task_permitted']);
+//      $actions['cancel'] = _hosting_task_button(t('Cancel'), sprintf("hosting/tasks/%d/cancel", $info['nid']), t("Cancel the task and remove it from the queue"), 'hosting-button-stop', !$info['task_permitted']);
+//      $actions['cancel'] = _hosting_task_button(t('Cancel'), sprintf("hosting/tasks/%d/cancel", $info['nid']), t("Cancel the task and remove it from the queue"), 'hosting-button-stop', !$info['task_permitted']);
     }
     else {
-      $actions['run'] = _hosting_task_button(t('Run'), sprintf("hosting_confirm/%d/%s_%s", 'TODO', 'TODO', $task), $info['description'], 'hosting-button-run', $info['task_permitted'], $info['dialog']);
+//      $actions['run'] = _hosting_task_button(t('Run'), sprintf("hosting_confirm/%d/%s_%s", 'TODO', 'TODO', $task), $info['description'], 'hosting-button-run', $info['task_permitted'], $info['dialog']);
+      $actions['run'] = _hosting_task_button(t('Run'), sprintf("hosting_confirm/%d/%s_%s", 'TODO', 'TODO', $task), $info['description'], 'hosting-button-run', FALSE, $info['dialog']);
     }
 
-    $actions['log'] = _hosting_task_button(t('View'), isset($info['nid']) ? 'hosting/task/' . $info['nid'] : '<front>', t("Display the task log"), 'hosting-button-log', isset($info['nid']), TRUE, FALSE);
+    $actions['log'] = _hosting_task_button(t('View'), isset($info['nid']) ? 'hosting_matrix/task/' . $server_nid . '/' . $info['nid'] : '<front>', t("Display the task log"), 'hosting-button-log', isset($info['nid']), TRUE, FALSE);
     $row['actions'] = array(
       'data' => implode('', $actions),
       'class' => array('hosting-actions'),
@@ -279,4 +341,86 @@ function hosting_matrix_task_table($tasklist) {
   }
   $output .= theme('table', array('header' => $headers, 'rows' => $rows, 'attributes' => array('class' => array('hosting-table'))));
   return $output;
+}
+
+/**
+ * Display table containing the logged information for this task
+ */
+function _hosting_matrix_task_log_table($log) {
+  if (!empty($log)) {
+    $headers = array('data' => 'Log message', 'execution_time' => 'Execution time');
+    $rows = array();
+    $last_timestamp = 0;
+    $exec_time = '';
+    $row_count = -1;
+    foreach ($log as $entry) {
+      if (strlen($entry->message) > 300) {
+        $summary = "<span class='hosting-task-summary'>" . filter_xss(substr($entry->message, 0, 75), array()) . "... <a href='javascript:void(0)' class='hosting-summary-expand modalframe-exclude'>(" . t('Expand') . ')</a></span>';
+        $message = $summary . "<span class='hosting-task-full'>" . filter_xss($entry->message) . '</span>';
+      }
+      else {
+        $message = filter_xss($entry->message);
+      }
+
+      // Add error and warning anchors, so we can provide a quick link to them.
+      if ($entry->type == 'error') {
+        $message = '<a name="error"></a>' . $message;
+      }
+      elseif ($entry->type == 'warning') {
+        $message = '<a name="warning"></a>' . $message;
+      }
+
+      // Add the exec_time to the previous row
+      $exec_time = $entry->timestamp - $last_timestamp;
+
+      // "1" is unreliable because timestamps don't allow sub-second granularity
+      if ($exec_time < 1) {
+        $exec_time = '<div>-</div>';
+      }
+      else if ($exec_time == 1) {
+        $exec_time = '<div title="Many tasks take less than 1 second to perform. This duration represents an aggregate of the preceding tasks\' duration."><strong>' . $exec_time . ' s.</strong></div>';
+      }
+      else {
+        $exec_time = '<div><strong>' . $exec_time . ' s.</strong></div>';
+      }
+
+      if ($row_count > -1) {
+        $rows[$row_count]['data'][] = array(
+          'data' => $exec_time,
+        );
+      }
+
+      $row_count++;
+      $last_timestamp = $entry->timestamp;
+
+      $row = array(
+        array(
+          'data' => $message,
+          'class' => array('hosting-status'),
+        ),
+      );
+
+      $rows[] = array(
+        'data' => $row,
+        'class' => array(_hosting_task_log_class($entry->type)),
+      );
+
+      // Record that we've seen this log row.
+      $last_lid = $entry->lid;
+    }
+
+    return array(
+      '#theme' => "table",
+      '#header' => $headers,
+      '#rows' => $rows,
+      '#attributes' => array(
+        'id' => 'hosting-task-log',
+        'class' => array(
+          'hosting-table',
+        ),
+      ),
+    );
+  }
+
+  return FALSE;
 }
