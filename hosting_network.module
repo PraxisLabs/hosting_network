@@ -114,9 +114,6 @@ function _hosting_network_get_server_markup($nid) {
 
   $html = '';
   $html .= '<div>';
-  $html .= hosting_network_task_table($tasks, $nid);
-  $html .= '</div>';
-  $html .= '<div>';
   $html .= theme('hosting_network_platform_list', array('platforms' => $platforms));
   $html .= '</div>';
 
