@@ -1,0 +1,11 @@
+name = "Aegir Network Server"
+description = "Provides a way to communicate with other Aegir Network nodes."
+core = "7.x"
+
+dependencies[] = hosting
+dependencies[] = hosting_services
+dependencies[] = services
+
+files[] = hosting_network.service.inc
+
+package = Hosting
