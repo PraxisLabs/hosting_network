@@ -48,7 +48,8 @@ function hosting_matrix_get_task($server_nid, $task_nid) {
   $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
 
   $data = array();
-  $response = hosting_matrix_connect($base_url, $data);
+  $base_url = '';
+  $response = hosting_matrix_connect($server_nid, $data, $base_url);
 
   $platforms = array();
 
@@ -66,7 +67,8 @@ function hosting_matrix_get_task_log($server_nid, $task_nid) {
   $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
 
   $data = array();
-  $response = hosting_matrix_connect($base_url, $data);
+  $base_url = '';
+  $response = hosting_matrix_connect($server_nid, $data, $base_url);
 
   $platforms = array();
 
@@ -96,7 +98,7 @@ function hosting_matrix_clients_form($form, &$form_state) {
     $form['hosting_matrix_' . $nid] = array(
       '#type' => 'markup',
       '#title' => t('Server'),
-      '#markup' => _hosting_matrix_get_server_markup($nid, $hostname),
+      '#markup' => _hosting_matrix_get_server_markup($nid),
       '#prefix' => $prefix,
       '#suffix' => '</fieldset>',
     );
@@ -105,9 +107,10 @@ function hosting_matrix_clients_form($form, &$form_state) {
   return $form;
 }
 
-function _hosting_matrix_get_server_markup($nid, $hostname) {
+function _hosting_matrix_get_server_markup($nid) {
+  // TODO: This is the local nid! Remove this. Make a list of servers?
   $tasks = hosting_matrix_get_task_list($nid);
-  $platforms = hosting_matrix_get_platform_list($hostname);
+  $platforms = hosting_matrix_get_platform_list($nid);
 
   $html = '';
   $html .= '<div>';
@@ -172,12 +175,13 @@ function theme_hosting_matrix_platform_list($variables) {
   return theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('class' => array('hosting-table'))));
 }
 
-function hosting_matrix_get_platform_list($host) {
+function hosting_matrix_get_platform_list($server_nid) {
   // TODO
   $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
   
   $data = array();
-  $response = hosting_matrix_connect($base_url, $data);
+  $base_url = '';
+  $response = hosting_matrix_connect($server_nid, $data, $base_url);
 
   $platforms = array();
 
@@ -217,10 +221,9 @@ function hosting_matrix_get_platform_list($host) {
 }
 
 function hosting_matrix_get_task_list($nid) {
-  $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
-
   $data = array();
-  $response = hosting_matrix_connect($base_url, $data);
+  $base_url = '';
+  $response = hosting_matrix_connect($nid, $data, $base_url);
 
   $platforms = array();
 
@@ -238,7 +241,17 @@ function hosting_matrix_get_task_list($nid) {
   }  
 }
 
-function hosting_matrix_connect($base_url, &$data) {
+function hosting_matrix_connect($server_nid, &$data, &$base_url) {
+  $node = node_load($server_nid);
+
+  if ($node) {
+    // TODO: https
+    $base_url = 'http://' . $node->title . '/hosting_matrix_client';
+  }
+  else {
+    return;
+  }
+
   // TODO
   $data = array(
     'username' => 'admin',
