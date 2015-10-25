@@ -1,0 +1,200 @@
+<?php
+
+/**
+ * Placeholder implementation of hook_menu
+ *
+ * TODO Use or remove this hook
+ */
+function hosting_matrix_menu() {
+  $items = array();
+  $items['admin/hosting/matrix'] = array(
+    'title' => 'Server matrix',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hosting_matrix_settings'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['hosting/matrix_clients'] = array(
+    'title' => 'Server Matrix settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hosting_matrix_clients_form'),
+    'access callback' => TRUE,
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+function hosting_matrix_clients_form($form, &$form_state) {
+  $matrix_clients = hosting_get_servers('matrix_client');
+
+  foreach($matrix_clients as $nid => $hostname) {
+    $node = node_load($nid);
+
+    $prefix = '<fieldset class="collapsible" id="hosting-matrix-server-"' . $nid . '">';
+    $prefix .= '<strong>Server: ' . $hostname . '</strong>';
+
+    $form['hosting_matrix_' . $nid] = array(
+      '#type' => 'markup',
+      '#title' => t('Server'),
+      '#markup' => _hosting_matrix_get_server_markup($nid, $hostname),
+      '#prefix' => $prefix,
+      '#suffix' => '</fieldset>',
+    );
+  }
+
+  return $form;
+}
+
+function _hosting_matrix_get_server_markup($nid, $hostname) {
+  $platforms = hosting_matrix_get_platform_list($hostname);
+
+  return theme('hosting_matrix_platform_list', array('platforms' => $platforms));
+}
+
+function hosting_matrix_theme($existing, $type, $theme, $path) {
+  return array(
+    'hosting_matrix_platform_list' => array(
+      'variables' => array('platforms' => NULL),
+    ),
+  );
+}
+
+function theme_hosting_matrix_platform_list($variables) {
+  $platforms = $variables['platforms'];
+
+  $header = array(
+    t('Platform'),
+    t('Release'),
+    t('Server'),
+    t('Verified'),
+    t('Sites'),
+  );
+
+  $rows[] = array();
+
+  $total = 0;
+  foreach ($platforms as $node) {
+    $row = array();
+    $row[] = array(
+      'class' => array('hosting-status'),
+      'data' => $node->title,
+    );
+    $release = sprintf("%s %s", $node->release->title, $node->release->version);
+    $row[] = $release;
+    $row[] = $node->web_server;
+    $row[] = hosting_format_interval($node->verified);
+    //TODO
+    $total += 1;
+    $row[] = count($node->sites);
+    $rows[] = array(
+      'data' => $row,
+      'class' => array(_hosting_platform_list_class($node->platform_status)),
+    );
+  }
+  $row = array();
+  $row[] = array(
+    'data' => t('Total sites hosted'),
+    'colspan' => 4,
+  );
+  $row[] = $total;
+  $rows[] = $row;
+
+  return theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('class' => array('hosting-table'))));
+}
+
+function hosting_matrix_get_platform_list($host) {
+  // TODO
+  $base_url = 'http://hosting_matrix.local/hosting_matrix_client';
+  
+  $data = array();
+  $response = hosting_matrix_connect($base_url, $data);
+
+  $platforms = array();
+
+  if ($response->code == 200) {
+    // Use the cookie and the Token for the POST request
+    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
+    $options['headers']['X-CSRF-Token'] = $data->token;
+  
+    // Get info about a user 
+    $data = array();
+    $options['data'] = http_build_query($data, '', '&');
+    $options['method'] = 'GET';
+
+    $response = drupal_http_request($base_url . '/hosting_platform', $options);
+    $data = json_decode($response->data);
+
+    foreach ($data as $platform) {
+      $options['data'] = http_build_query($data, '', '&');
+      $options['method'] = 'GET';
+      $response = drupal_http_request($base_url . '/hosting_platform/' . $platform->nid, $options);
+      $platform_data = json_decode($response->data);
+
+      $platforms[$platform_data->nid] = $platform_data;
+
+      $options['data'] = http_build_query(array('nid' => $platform->nid,), '', '&');
+      $options['method'] = 'POST';
+      $response = drupal_http_request($base_url . '/hosting_platform/sites', $options);
+      $sites = json_decode($response->data);
+
+      $platforms[$platform_data->nid]->sites = (array)$sites;
+    }
+  }
+  else {
+    drupal_set_message(t('An error occured while trying to connect to !hostname. Check the configuration.', array('!hostname' => $host)), 'error');
+  }
+
+  return $platforms;
+}
+
+function hosting_matrix_connect($base_url, &$data) {
+  // TODO
+  $data = array(
+    'username' => 'admin',
+    'password' => 'test',
+  );
+
+  $data = drupal_json_encode($data);
+
+  $options = array(
+    'headers' => array(
+      'Content-Type' => 'application/json',
+    ),
+    'method' => 'POST',
+    'data' => $data
+  );
+
+  $response = drupal_http_request($base_url . '/user/login', $options);
+  $data = json_decode($response->data);
+
+  return $response;
+}
+
+
+function hosting_matrix_settings($form, &$form_state) {
+  return system_settings_form($form);
+}
+
+/**
+ * TODO: Implement hook_permission().
+ */
+
+/**
+ * Implements hook_hosting_service_type().
+ */
+function hosting_matrix_hosting_service_type() {
+  return array(
+    'matrix_client' => array(// Machine name
+      'title' => t('Matrix client'), // Human-readable name
+      'weight' => 0, // Optional, defaults to 0
+    ),
+  );
+}
+
+/**
+ * Implements hook_hosting_service().
+ */
+function hosting_matrix_hosting_service() {
+  return array('hostmaster' => 'matrix_client'); // Service implementation => service type.
+}
