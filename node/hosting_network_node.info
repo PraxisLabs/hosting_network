@@ -1,0 +1,16 @@
+name = Hosting Network node
+core = 7.x
+package = Hosting
+dependencies[] = ctools
+dependencies[] = hosting
+dependencies[] = hosting_network
+dependencies[] = oauth_common
+dependencies[] = rest_server
+dependencies[] = services
+dependencies[] = services_oauth
+features[ctools][] = oauth_common:oauth:1
+features[ctools][] = services:services:3
+features[features_api][] = api:2
+features[oauth_common_context][] = hosting_network_node_context
+features[services_endpoint][] = hosting_network_node_endpoint
+project path = sites/hosting_matrix.local/modules/hosting_network_node/node2

@@ -5,6 +5,7 @@ core = "7.x"
 dependencies[] = hosting
 dependencies[] = hosting_services
 dependencies[] = services
+dependencies[] = services_oauth
 
 files[] = hosting_network.service.inc
 
