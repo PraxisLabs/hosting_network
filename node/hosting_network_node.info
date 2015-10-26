@@ -5,6 +5,7 @@ dependencies[] = ctools
 dependencies[] = hosting
 dependencies[] = hosting_network
 dependencies[] = oauth_common
+dependencies[] = oauth_common_providerui
 dependencies[] = rest_server
 dependencies[] = services
 dependencies[] = services_oauth
