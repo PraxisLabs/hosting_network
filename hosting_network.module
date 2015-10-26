@@ -15,11 +15,13 @@ function hosting_network_menu() {
   );
 
   $items['hosting/network_nodes'] = array(
-    'title' => 'Server network',
+    'title' => 'Aegir network',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_nodes_form'),
     'access callback' => TRUE,
+    'menu_name' => 'main-menu',
     'type' => MENU_NORMAL_ITEM,
+    'weight' => 20,
   );
 
   $items['hosting_network/task/%/%'] = array(
