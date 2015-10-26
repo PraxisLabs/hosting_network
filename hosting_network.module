@@ -43,47 +43,15 @@ function hosting_network_view_task($server_nid, $task_nid) {
   }
 }
 
+/**
+ *  Helper function to get a task's info.
+ */
 function hosting_network_get_task($server_nid, $task_nid) {
-  // TODO
-  $base_url = 'http://hosting_network.local/hosting_network_node';
-
-  $data = array();
-  $base_url = '';
-  $response = hosting_network_connect($server_nid, $data, $base_url);
-
-  $platforms = array();
-
-  if ($response->code == 200) {
-    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
-    $options['method'] = 'GET';
-
-    $response = drupal_http_request($base_url . '/hosting_task/' . $task_nid, $options);
-    return json_decode($response->data);
-  }
+  return hosting_network_rest_call($server_nid, 'hosting_task/' . $task_nid);
 }
 
 function hosting_network_get_task_log($server_nid, $task_nid) {
-  // TODO
-  $base_url = 'http://hosting_network.local/hosting_network_node';
-
-  $data = array();
-  $base_url = '';
-  $response = hosting_network_connect($server_nid, $data, $base_url);
-
-  $platforms = array();
-
-  if ($response->code == 200) {
-    // Use the cookie and the Token for the POST request
-    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
-    $options['headers']['X-CSRF-Token'] = $data->token;
-
-    $options['data'] = http_build_query(array('nid' => $task_nid,), '', '&');
-    $options['method'] = 'POST';
-    $response = drupal_http_request($base_url . '/hosting_task/get_task_log', $options);
-    $messages = json_decode($response->data);
-
-    return $messages;
-  }
+  return hosting_network_rest_call($server_nid, 'hosting_task/get_task_log', array('nid' => $task_nid), 'POST');
 }
 
 function hosting_network_nodes_form($form, &$form_state) {
@@ -109,8 +77,7 @@ function hosting_network_nodes_form($form, &$form_state) {
 
 function _hosting_network_get_server_markup($nid) {
   // TODO: This is the local nid! Remove this. Make a list of servers?
-  $tasks = hosting_network_get_task_list($nid);
-  $platforms = hosting_network_get_platform_list($nid);
+  $platforms = hosting_network_get_platform_list($nid, TRUE);
 
   $html = '';
   $html .= '<div>';
@@ -172,102 +139,87 @@ function theme_hosting_network_platform_list($variables) {
   return theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('class' => array('hosting-table'))));
 }
 
-function hosting_network_get_platform_list($server_nid) {
-  $data = array();
-  $base_url = '';
-  $response = hosting_network_connect($server_nid, $data, $base_url);
-
+/**
+ * Returns a list of all platforms on a server with (option) all their sites.
+ */
+function hosting_network_get_platform_list($server_nid, $get_site_details = FALSE) {
+  // GET call for the list of platforms
+  // TODO: hosting_services a function to get all the details...
+  $raw_platforms = hosting_network_rest_call($server_nid, 'hosting_platform');
   $platforms = array();
 
-  if ($response->code == 200) {
-    // Use the cookie and the Token for the POST request
-    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
-    $options['headers']['X-CSRF-Token'] = $data->token;
-  
-    $data = array();
-    $options['data'] = http_build_query($data, '', '&');
-    $options['method'] = 'GET';
+  // TODO: Will pagination come into play here??
+  if ($get_site_details && !empty($raw_platforms)) {
+    foreach ($raw_platforms as $raw_platform) {
+      $platform = hosting_network_rest_call($server_nid, 'hosting_platform/' . $raw_platform->nid);
 
-    $response = drupal_http_request($base_url . '/hosting_platform', $options);
-    $data = json_decode($response->data);
+      $platform->sites = (array) hosting_network_rest_call($server_nid, 'hosting_platform/sites', array('nid' => $platform->nid), 'POST');
 
-    foreach ($data as $platform) {
-      $options['data'] = http_build_query($data, '', '&');
-      $options['method'] = 'GET';
-      $response = drupal_http_request($base_url . '/hosting_platform/' . $platform->nid, $options);
-      $platform_data = json_decode($response->data);
-
-      $platforms[$platform_data->nid] = $platform_data;
-
-      $options['data'] = http_build_query(array('nid' => $platform->nid,), '', '&');
-      $options['method'] = 'POST';
-      $response = drupal_http_request($base_url . '/hosting_platform/sites', $options);
-      $sites = json_decode($response->data);
-
-      $platforms[$platform_data->nid]->sites = (array)$sites;
+      $platforms[$platform->nid] = $platform;
     }
-  }
-  else {
-    drupal_set_message(t('An error occured while trying to connect to !hostname. Check the configuration.', array('!hostname' => $base_url)), 'error');
   }
 
   return $platforms;
 }
 
-function hosting_network_get_task_list($nid) {
-  $data = array();
-  $base_url = '';
-  $response = hosting_network_connect($nid, $data, $base_url);
+function hosting_network_get_task_list($server_nid, $object_nid) {
+  $tasks = hosting_network_rest_call($server_nid, 'hosting_task/get_task_list', array('nid' => $object_nid), 'POST');
 
-  $platforms = array();
-
-  if ($response->code == 200) {
-    // Use the cookie and the Token for the POST request
-    $options['headers']['Cookie'] = $data->session_name . '=' . $data->sessid;
-    $options['headers']['X-CSRF-Token'] = $data->token;
-
-    $options['data'] = http_build_query(array('nid' => $nid,), '', '&');
-    $options['method'] = 'POST';
-    $response = drupal_http_request($base_url . '/hosting_task/get_task_list', $options);
-    $tasks = json_decode($response->data);
-
-    return (array) $tasks;
-  }  
+  return (array) $tasks;
 }
 
-function hosting_network_connect($server_nid, &$data, &$base_url) {
+/**
+ *  Authenticates and sends an OAuth-authenticated request based on the server.
+ *
+ * Only supports GET and POST requests for now:
+ *  * https://www.drupal.org/node/2137333
+ *  * https://www.drupal.org/node/2137349
+ */
+function hosting_network_rest_call($server_nid, $command, $command_params = array(), $method = 'GET', &$debug_info = array()) {
   $node = node_load($server_nid);
 
+  // Only supports GET and POST, see function doc text.
+  if ($method != 'GET' && $method != 'POST') {
+    throw new Exception("HTTP method error: Only POST and GET requests are currently supported.");
+  }
+
   if ($node) {
-    // TODO: https
     $base_url = 'http://' . $node->title . '/hosting_network_node';
   }
   else {
     return;
   }
+  $conskey = $node->services['network_node']->oauth_key;
+  $conssec = $node->services['network_node']->oauth_secret;
 
-  // TODO
-  $data = array(
-    'username' => 'admin',
-    'password' => 'test',
-  );
-
-  $data = drupal_json_encode($data);
-
+  $consumer = new OAuthConsumer($conskey, $conssec, NULL);
+  $api_url = $base_url . '/' . $command;
+  $params = array();
+  $request = OAuthRequest::from_consumer_and_token($consumer, NULL, $method, $api_url, $params);
+  $test = $request->sign_request(new OAuthSignatureMethod_HMAC_SHA1(), $consumer, NULL);
+  $data = http_build_query($command_params, '', '&');
   $options = array(
     'headers' => array(
-      'Content-Type' => 'application/json',
+      'Accept' => 'application/json',
     ),
-    'method' => 'POST',
-    'data' => $data
+    'method' => $method,
+    'data' => $data,
   );
 
-  $response = drupal_http_request($base_url . '/user/login', $options);
-  $data = json_decode($response->data);
+  $response = drupal_http_request($request->to_url(), $options);
 
-  return $response;
+  $debug_info = array(
+    'api_url' => $api_url,
+    'consumer' => $consumer,
+    'response' => $response,
+    'request' => $request,
+    'options' => $options,
+  );
+
+  if($response->code == 200){
+    return json_decode($response->data);
+  }
 }
-
 
 function hosting_network_settings($form, &$form_state) {
   return system_settings_form($form);
