@@ -1,4 +1,5 @@
-name = Hosting Network node
+name = Aegir Network Node
+description = "Configures the Services endpoint to allow remote access from an Aegir Network server."
 core = 7.x
 package = Hosting
 dependencies[] = ctools

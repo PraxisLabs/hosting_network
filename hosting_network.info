@@ -1,5 +1,5 @@
 name = "Aegir Network Server"
-description = "Provides a way to communicate with other Aegir Network nodes."
+description = "Displays information on Aegir Network nodes and allows remote operations."
 core = "7.x"
 
 dependencies[] = hosting
