@@ -14,17 +14,28 @@ function hosting_network_menu() {
     'type' => MENU_LOCAL_TASK,
   );
 
-  $items['hosting/network_nodes'] = array(
+  $items['hosting_network/nodes'] = array(
     'title' => 'Aegir network',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_nodes_form'),
+    // TODO
     'access callback' => TRUE,
     'menu_name' => 'main-menu',
-    'type' => MENU_NORMAL_ITEM,
     'weight' => 20,
   );
 
+  // server/platform
+  $items['hosting_network/platform/%/%'] = array(
+    'title' => 'Aegir network platform',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hosting_network_platform_form', 2, 3),
+    // TODO
+    'access callback' => TRUE,
+  );
+
+  // server/task
   $items['hosting_network/task/%/%'] = array(
+    'title' => 'Aegir network task',
     'page callback' => 'hosting_network_view_task',
     'page arguments' => array(2, 3),
     // TODO: Permission
@@ -77,8 +88,34 @@ function hosting_network_nodes_form($form, &$form_state) {
   return $form;
 }
 
+function hosting_network_platform_form($form, &$form_state, $server_nid, $platform_nid) {
+  $platform = hosting_network_rest_call($server_nid, 'hosting_platform/' . $platform_nid);
+  $sites = (array) hosting_network_rest_call($server_nid, 'hosting_platform/sites', array('nid' => $platform_nid), 'POST');
+  $tasks = hosting_network_get_task_list($server_nid, $platform_nid);
+
+  if (empty($platform)) {
+    return '<p>Server unreachable, please check that the OAuth server settings are correct.</p>';
+  }
+
+  $form['platform_info'] = array(
+    '#type' => 'markup',
+    '#title' => t('Server'),
+//    '#markup' => _hosting_network_get_platform_info_markup($platform),
+    '#markup' => theme('hosting_network_platform_page', array('server_nid' => $server_nid, 'platform' => $platform, 'sites' => $sites, 'tasks' => $tasks)),
+    '#prefix' => '<fieldset>',
+    '#suffix' => '</fieldset>',
+  );
+
+  return $form;
+}
+
 function _hosting_network_get_server_markup($nid) {
   $platforms = hosting_network_get_platform_list($nid, TRUE);
+
+  if (empty($platforms)) {
+    return '<p>Server unreachable, please check that the OAuth server settings are correct.</p>';
+  }
+
   $tasks = hosting_network_get_server_task_list($nid, variable_get('hosting_network_overview_tasks_per_server', 3));
 
   $html = '';
@@ -88,7 +125,7 @@ function _hosting_network_get_server_markup($nid) {
   $html .= '</div>';
   $html .= '<div>';
   $html .= '<p>Platforms</p>';
-  $html .= theme('hosting_network_platform_list', array('platforms' => $platforms));
+  $html .= theme('hosting_network_platform_list', array('platforms' => $platforms, 'server_nid' => $nid));
   $html .= '</div>';
 
   return $html;
@@ -97,16 +134,79 @@ function _hosting_network_get_server_markup($nid) {
 function hosting_network_theme($existing, $type, $theme, $path) {
   return array(
     'hosting_network_platform_list' => array(
-      'variables' => array('platforms' => NULL),
+      'variables' => array('platforms' => NULL, 'server_nid' => NULL),
     ),
     'hosting_network_task_list' => array(
       'variables' => array('tasks' => NULL, 'server_nid' => NULL, 'display_run_buttons' => NULL),
     ),
+    'hosting_network_platform_page' => array(
+      'variables' => array('server_nid' => NULL, 'platform' => NULL, 'sites' => NULL, 'tasks' => NULL),
+    ),
+    'hosting_network_site_list' => array(
+      'variables' => array('server_nid' => NULL, 'platform' => NULL, 'sites' => NULL),
+    ),
   );
+}
+
+function theme_hosting_network_platform_page($variables) {
+  $platform = $variables['platform'];
+  $sites = $variables['sites'];
+  $tasks = $variables['tasks'];
+  $server_nid = $variables['server_nid'];
+
+  $server = node_load($server_nid);
+
+  //TODO: Platform info
+  $html = '<p><strong>Platform:</strong> ' . $platform->title . '</p>';
+  $html .= '<p><strong>Server:</strong> ' . $server->title . '</p>';
+  $html .= '<div>';
+  $html .= '<p>Tasks</p>';
+  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'display_run_buttons' => FALSE));
+  $html .= '</div>';
+  $html .= '<div>';
+  $html .= '<p>Sites</p>';
+  $html .= theme('hosting_network_site_list', array('server_nid' => $server_nid, 'platform' => $platform, 'sites' => $sites));
+  $html .= '</div>';
+
+  return $html;
+
+}
+
+function theme_hosting_network_site_list($variables) {
+  $sites = $variables['sites'];
+  $platform = $variables['platform'];
+  $server_nid = $variables['server_nid'];
+
+  $header = array(
+    t('Site'),
+    t('Profile'),
+    t('Created'),
+  );
+
+  $rows[] = array();
+
+  $total = 0;
+  foreach ($sites as $node) {
+    $row = array();
+    $row[] = array(
+      'class' => array('hosting-status'),
+      'data' => '<a href="/hosting_network/site/' . $server_nid . '/' . $node->nid . '">' . $node->title . '</a>',
+    );
+    $row[] = $node->profile;
+    $row[] = hosting_format_interval($node->created);
+    $total += 1;
+    $rows[] = array(
+      'data' => $row,
+      'class' => array(_hosting_site_list_class($node->site_status, $node->verified)),
+    );
+  }
+
+  return theme('table', array('header' => $header, 'rows' => $rows, 'attributes' => array('class' => array('hosting-table'))));
 }
 
 function theme_hosting_network_platform_list($variables) {
   $platforms = $variables['platforms'];
+  $server_nid = $variables['server_nid'];
 
   $header = array(
     t('Platform'),
@@ -123,8 +223,7 @@ function theme_hosting_network_platform_list($variables) {
     $row = array();
     $row[] = array(
       'class' => array('hosting-status'),
-      // TODO
-      'data' => '<a href="/todo">' . $node->title . '</a>',
+      'data' => '<a href="/hosting_network/platform/' . $server_nid . '/' . $node->nid . '">' . $node->title . '</a>',
     );
     $release = sprintf("%s %s", $node->release->title, $node->release->version);
     $row[] = $release;
