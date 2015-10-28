@@ -28,7 +28,16 @@ function hosting_network_menu() {
   $items['hosting_network/platform/%/%'] = array(
     'title' => 'Aegir network platform',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('hosting_network_platform_form', 2, 3),
+    'page arguments' => array('hosting_network_platform_page_form', 2, 3),
+    // TODO
+    'access callback' => TRUE,
+  );
+
+  // server/site
+  $items['hosting_network/site/%/%'] = array(
+    'title' => 'Aegir network site',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hosting_network_site_page_form', 2, 3),
     // TODO
     'access callback' => TRUE,
   );
@@ -78,7 +87,7 @@ function hosting_network_nodes_form($form, &$form_state) {
 
     $form['hosting_network_' . $nid] = array(
       '#type' => 'markup',
-      '#title' => t('Server'),
+      '#title' => t('Platform'),
       '#markup' => _hosting_network_get_server_markup($nid),
       '#prefix' => $prefix,
       '#suffix' => '</fieldset>',
@@ -88,7 +97,7 @@ function hosting_network_nodes_form($form, &$form_state) {
   return $form;
 }
 
-function hosting_network_platform_form($form, &$form_state, $server_nid, $platform_nid) {
+function hosting_network_platform_page_form($form, &$form_state, $server_nid, $platform_nid) {
   $platform = hosting_network_rest_call($server_nid, 'hosting_platform/' . $platform_nid);
   $sites = (array) hosting_network_rest_call($server_nid, 'hosting_platform/sites', array('nid' => $platform_nid), 'POST');
   $tasks = hosting_network_get_task_list($server_nid, $platform_nid);
@@ -100,7 +109,6 @@ function hosting_network_platform_form($form, &$form_state, $server_nid, $platfo
   $form['platform_info'] = array(
     '#type' => 'markup',
     '#title' => t('Server'),
-//    '#markup' => _hosting_network_get_platform_info_markup($platform),
     '#markup' => theme('hosting_network_platform_page', array('server_nid' => $server_nid, 'platform' => $platform, 'sites' => $sites, 'tasks' => $tasks)),
     '#prefix' => '<fieldset>',
     '#suffix' => '</fieldset>',
@@ -108,6 +116,27 @@ function hosting_network_platform_form($form, &$form_state, $server_nid, $platfo
 
   return $form;
 }
+
+function hosting_network_site_page_form($form, &$form_state, $server_nid, $site_nid) {
+  $site = hosting_network_rest_call($server_nid, 'hosting_site/get_by_nid', array('nid' => $site_nid), 'POST', $debug);
+  $platform = hosting_network_rest_call($server_nid, 'hosting_platform/' . $site->platform);
+  $tasks = hosting_network_get_task_list($server_nid, $site_nid);
+
+  if (empty($site)) {
+    return '<p>Server unreachable or site doesn\'t exist, please check that the OAuth server settings are correct.</p>';
+  }
+
+  $form['site_info'] = array(
+    '#type' => 'markup',
+    '#title' => t('Site'),
+    '#markup' => theme('hosting_network_site_page', array('server_nid' => $server_nid, 'platform' => $platform, 'site' => $site, 'tasks' => $tasks)),
+    '#prefix' => '<fieldset>',
+    '#suffix' => '</fieldset>',
+  );
+
+  return $form;
+}
+
 
 function _hosting_network_get_server_markup($nid) {
   $platforms = hosting_network_get_platform_list($nid, TRUE);
@@ -120,8 +149,9 @@ function _hosting_network_get_server_markup($nid) {
 
   $html = '';
   $html .= '<div>';
-  $html .= '<p>Tasks</p>';
+  $html .= '<p>Recent tasks</p>';
   $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $nid, 'display_run_buttons' => FALSE));
+  $html .= '<p>View more (TODO)</p>';
   $html .= '</div>';
   $html .= '<div>';
   $html .= '<p>Platforms</p>';
@@ -145,6 +175,9 @@ function hosting_network_theme($existing, $type, $theme, $path) {
     'hosting_network_site_list' => array(
       'variables' => array('server_nid' => NULL, 'platform' => NULL, 'sites' => NULL),
     ),
+    'hosting_network_site_page' => array(
+      'variables' => array('server_nid' => NULL, 'platform' => NULL, 'site' => NULL, 'tasks' => NULL),
+    ),
   );
 }
 
@@ -157,16 +190,39 @@ function theme_hosting_network_platform_page($variables) {
   $server = node_load($server_nid);
 
   //TODO: Platform info
-  $html = '<p><strong>Platform:</strong> ' . $platform->title . '</p>';
+  $html = '';
+  $html .= '<p><strong>Platform:</strong> ' . $platform->title . '</p>';
   $html .= '<p><strong>Server:</strong> ' . $server->title . '</p>';
   $html .= '<div>';
   $html .= '<p>Tasks</p>';
-  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'display_run_buttons' => FALSE));
+  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'display_run_buttons' => TRUE));
   $html .= '</div>';
   $html .= '<div>';
   $html .= '<p>Sites</p>';
   $html .= theme('hosting_network_site_list', array('server_nid' => $server_nid, 'platform' => $platform, 'sites' => $sites));
   $html .= '</div>';
+
+  return $html;
+
+}
+
+function theme_hosting_network_site_page($variables) {
+  $platform = $variables['platform'];
+  $site = $variables['site'];
+  $tasks = $variables['tasks'];
+  $server_nid = $variables['server_nid'];
+
+  $server = node_load($server_nid);
+
+  //TODO: Site info
+  $html = '';
+  $html .= '<p><strong>Site:</strong> ' . $site->title . '</p>';
+  $html .= '<p><strong>Platform:</strong> ' . $platform->title . '</p>';
+  $html .= '<p><strong>Server:</strong> ' . $server->title . '</p>';
+  $html .= '<div>';
+  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'display_run_buttons' => TRUE));
+  $html .= '</div>';
+  $html .= '<div>';
 
   return $html;
 
