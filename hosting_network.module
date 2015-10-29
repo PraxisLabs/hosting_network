@@ -11,6 +11,7 @@ function hosting_network_menu() {
     'title' => 'Server Network settings',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_settings'),
+    'access callback' => TRUE,
     'type' => MENU_LOCAL_TASK,
   );
 
@@ -263,6 +264,8 @@ function theme_hosting_network_site_list($variables) {
 function theme_hosting_network_platform_list($variables) {
   $platforms = $variables['platforms'];
   $server_nid = $variables['server_nid'];
+  $show_sites = variable_get('hosting_network_show_sites', TRUE);
+  $max_sites = variable_get('hosting_network_max_sites_to_display', 10);
 
   $header = array(
     t('Platform'),
@@ -276,10 +279,11 @@ function theme_hosting_network_platform_list($variables) {
 
   $total = 0;
   foreach ($platforms as $node) {
+    $platform_link = '/hosting_network/platform/' . $server_nid . '/' . $node->nid;
     $row = array();
     $row[] = array(
       'class' => array('hosting-status'),
-      'data' => '<a href="/hosting_network/platform/' . $server_nid . '/' . $node->nid . '">' . $node->title . '</a>',
+      'data' => '<a href="' . $platform_link . '"><strong>' . $node->title . '</strong></a>',
     );
     $release = sprintf("%s %s", $node->release->title, $node->release->version);
     $row[] = $release;
@@ -291,6 +295,40 @@ function theme_hosting_network_platform_list($variables) {
       'data' => $row,
       'class' => array(_hosting_platform_list_class($node->platform_status)),
     );
+
+    if ($show_sites) {
+      $platform_total = 0;
+      foreach($node->sites as $site) {
+        if ($platform_total >= $max_sites) {
+          continue;
+        }
+        $row = array();
+        $row[] = '';
+        $row[] = array(
+          'class' => array('hosting-status'),
+          'data' => '<a href="/hosting_network/site/' . $server_nid . '/' . $site->nid . '">' . $site->title . '</a>',
+        );
+        $row[] = t('Profile: '). $site->profile;
+        $row[] = t('Created:') . hosting_format_interval($site->created);
+        $row[] = '';
+        $rows[] = array(
+          'data' => $row,
+          'class' => array(_hosting_site_list_class($site->site_status, $site->verified)),
+        );
+        $platform_total += 1;
+        if ($platform_total >= $max_sites && count($node->sites) > $max_sites) {
+          $row = array();
+          $row[] = '';
+          $link = '<a href="' . $platform_link . '"><strong>' . t('Details') . '</strong></a> (' . (count($node->sites) - $max_sites) . ' more sites)';
+          $row[] = array(
+            'data' => $link,
+          );
+          $rows[] = array(
+            'data' => $row,
+          );
+        }
+      }
+    }
   }
   $row = array();
   $row[] = array(
@@ -401,6 +439,19 @@ function hosting_network_rest_call($server_nid, $command, $command_params = arra
 }
 
 function hosting_network_settings($form, &$form_state) {
+/*
+  TODO:
+
+  $tasks = hosting_network_get_server_task_list($nid, variable_get('hosting_network_overview_tasks_per_server', 3));
+  $show_sites = variable_get('hosting_network_show_sites', TRUE);
+  $max_sites = variable_get('hosting_network_max_sites_to_display', 10);
+*/
+
+  $form['hosting_network_show_sites'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Display sites in network overview'),
+    '#default_value' => variable_get('hosting_network_show_sites', TRUE),
+  );
   return system_settings_form($form);
 }
 
