@@ -1,3 +1,5 @@
+![preview](https://github.com/gboudrias/hosting_network/blob/master/preview.png)
+
 This module is in development. Its purpose is to allow inter-communication between Aegir servers (to address the "smart nodes" use case). The point is to centralize information to facilitate management of multiple servers.
 
 We use hosting\_services and 2-legged OAuth. You can use hosting\_network\_node to get the right OAuth configuration, afterwards you'll have to add an OAuth consumer to a user (presumably admin in development).
