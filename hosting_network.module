@@ -1,5 +1,10 @@
 <?php
 
+/* TODO:
+ * * Locked platforms do not appear.
+ * * Allow direct login through https://www.drupal.org/project/oauth2_login
+ *   or https://www.drupal.org/project/oauth2_authentication ??
+
 /**
  * Placeholder implementation of hook_menu
  *
@@ -83,8 +88,11 @@ function hosting_network_nodes_form($form, &$form_state) {
   foreach($network_nodes as $nid => $hostname) {
     $node = node_load($nid);
 
+    // TODO: https should be enforced by the host... but should we assume that?
+    $link_to_login_page = '<strong>[' . l('Login', 'http://' . $hostname . '/user/login', array('attributes' => array('target'=>'_blank'))) . ']</strong>';
     $prefix = '<fieldset class="collapsible" id="hosting-network-server-"' . $nid . '">';
-    $prefix .= '<strong>Server: ' . $hostname . '</strong>';
+    $prefix .= '<h2>Server: ' . $hostname . '</h2> ' . $link_to_login_page;
+    $prefix .= '<hr/>';
 
     $form['hosting_network_' . $nid] = array(
       '#type' => 'markup',
@@ -138,7 +146,9 @@ function hosting_network_site_page_form($form, &$form_state, $server_nid, $site_
   return $form;
 }
 
-
+/**
+ * TODO: Document function, clean up markup code, make into theme function?
+ */
 function _hosting_network_get_server_markup($nid) {
   $platforms = hosting_network_get_platform_list($nid, TRUE);
 
@@ -150,12 +160,12 @@ function _hosting_network_get_server_markup($nid) {
 
   $html = '';
   $html .= '<div>';
-  $html .= '<p>Recent tasks</p>';
+  $html .= '<p><strong>Recent tasks</strong></p>';
   $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $nid, 'display_run_buttons' => FALSE));
   $html .= '<p>View more (TODO)</p>';
   $html .= '</div>';
   $html .= '<div>';
-  $html .= '<p>Platforms</p>';
+  $html .= '<p><strong>Platforms</strong></p>';
   $html .= theme('hosting_network_platform_list', array('platforms' => $platforms, 'server_nid' => $nid));
   $html .= '</div>';
 
