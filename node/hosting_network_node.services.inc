@@ -20,6 +20,7 @@ function hosting_network_node_default_services_endpoint() {
     'services_oauth' => array(
       'oauth_context' => 'hosting_network_node_context',
       'credentials' => 'consumer',
+      'authorization' => '',
     ),
   );
   $endpoint->server_settings = array(
@@ -271,6 +272,15 @@ function hosting_network_node_default_services_endpoint() {
             ),
           ),
         ),
+        'get_by_nid' => array(
+          'enabled' => '1',
+          'settings' => array(
+            'services_oauth' => array(
+              'credentials' => 'consumer',
+              'authorization' => '',
+            ),
+          ),
+        ),
         'enable' => array(
           'enabled' => '1',
           'settings' => array(
@@ -387,41 +397,6 @@ function hosting_network_node_default_services_endpoint() {
         ),
       ),
     ),
-    'node' => array(
-      'operations' => array(
-        'retrieve' => array(
-          'enabled' => '1',
-          'settings' => array(
-            'services_oauth' => array(
-              'credentials' => '',
-              'authorization' => '',
-            ),
-          ),
-        ),
-        'index' => array(
-          'enabled' => '1',
-          'settings' => array(
-            'services_oauth' => array(
-              'credentials' => '',
-              'authorization' => '',
-            ),
-          ),
-        ),
-      ),
-    ),
-    'system' => array(
-      'actions' => array(
-        'get_variable' => array(
-          'enabled' => '1',
-          'settings' => array(
-            'services_oauth' => array(
-              'credentials' => '',
-              'authorization' => '',
-            ),
-          ),
-        ),
-      ),
-    ),
     'user' => array(
       'operations' => array(
         'retrieve' => array(
@@ -436,20 +411,6 @@ function hosting_network_node_default_services_endpoint() {
         'index' => array(
           'enabled' => '1',
           'settings' => array(
-            'services_oauth' => array(
-              'credentials' => '',
-              'authorization' => '',
-            ),
-          ),
-        ),
-      ),
-      'actions' => array(
-        'login' => array(
-          'enabled' => '1',
-          'settings' => array(
-            'services' => array(
-              'resource_api_version' => '1.0',
-            ),
             'services_oauth' => array(
               'credentials' => '',
               'authorization' => '',
