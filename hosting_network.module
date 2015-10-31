@@ -119,7 +119,7 @@ function hosting_network_run_task_form($form, &$form_state, $server_nid, $target
   else {
     throw new Exception("Server unreachable.");
   }
-  
+
   return $form;
 }
 
@@ -596,7 +596,7 @@ function theme_hosting_network_task_list($variables) {
       }
       else {
         // server/node/target_type/task_type
-        $path = sprintf("hosting_matrix/run/%s/%s/%s/%s", $server_nid, $target->nid, $target->type ,$task) ; 
+        $path = sprintf("hosting_matrix/run/%s/%s/%s/%s", $server_nid, $target->nid, $target->type ,$task) ;
         $actions['run'] = _hosting_task_button(t('Run'), $path, '', 'hosting-button-run', $info['task_permitted'], FALSE, TRUE);
       }
     }
@@ -711,7 +711,7 @@ function hosting_network_get_task_handlers($server_nid, $node) {
   // TODO: hook_task_access ? : NULL = yes, true = yes, false = no... alter?
   $task_handlers = module_invoke_all('hosting_network_handlers', $server_nid, $node);
   // TODO
-  //  $task_handlers = module_invoke_all('hosting_network_handlers_alter', $task_handlers, $node); 
+  //  $task_handlers = module_invoke_all('hosting_network_handlers_alter', $task_handlers, $node);
 
   return $task_handlers;
 }
