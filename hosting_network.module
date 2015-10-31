@@ -57,6 +57,14 @@ function hosting_network_menu() {
     'access arguments' => array('access task logs'),
   );
 
+  // server/node/target_type/task_type
+  $items['hosting_matrix/run/%/%/%/%'] = array(
+    'title' => 'Confirm task',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hosting_network_run_task_form', 2, 3, 4, 5),
+    'access callback' => 'hosting_network_task_menu_access_csrf',
+  );
+
   return $items;
 }
 
@@ -69,6 +77,50 @@ function hosting_network_view_task($server_nid, $task_nid) {
     $html = _hosting_network_task_log_table($log);
     return drupal_render($html);
   }
+}
+
+function hosting_network_run_task_form($form, &$form_state, $server_nid, $target_nid, $target_type, $task_type) {
+  if ($target_type == 'site') {
+    $node = hosting_network_rest_call($server_nid, 'hosting_site/get_by_nid', array('nid' => $target_nid), 'POST');
+  }
+  else {
+    $node = hosting_network_rest_call($server_nid, 'hosting_' . $target_type . '/' . $target_nid);
+  }
+
+  if ($node) {
+    $handlers = hosting_network_get_task_handlers($server_nid, $node);
+
+    if (isset($handlers[$task_type])) {
+      $handler = $handlers[$task_type];
+
+      switch ($handler) {
+        case 'run':
+          $task = hosting_network_rest_call($server_nid, 'hosting_task', array('type' => $task_type, 'nid' => $target_nid), 'POST', $debug);
+
+          if (!empty($task)) {
+            drupal_set_message(t('Task added successfully'));
+          } else {
+            drupal_set_message(t('Task could not be added. Check server settings.'), 'error');
+          }
+
+          drupal_goto('hosting_network/nodes');
+          break;
+
+        case 'confirm':
+          // TODO
+          break;
+
+        default:
+          // TODO
+          break;
+      }
+    }
+  }
+  else {
+    throw new Exception("Server unreachable.");
+  }
+  
+  return $form;
 }
 
 /**
@@ -109,7 +161,7 @@ function hosting_network_nodes_form($form, &$form_state) {
 function hosting_network_platform_page_form($form, &$form_state, $server_nid, $platform_nid) {
   $platform = hosting_network_rest_call($server_nid, 'hosting_platform/' . $platform_nid);
   $sites = (array) hosting_network_rest_call($server_nid, 'hosting_platform/sites', array('nid' => $platform_nid), 'POST');
-  $tasks = hosting_network_get_task_list($server_nid, $platform_nid);
+  $tasks = hosting_network_get_task_list($server_nid, $platform, TRUE);
 
   if (empty($platform)) {
     return '<p>Server unreachable, please check that the OAuth server settings are correct.</p>';
@@ -127,9 +179,9 @@ function hosting_network_platform_page_form($form, &$form_state, $server_nid, $p
 }
 
 function hosting_network_site_page_form($form, &$form_state, $server_nid, $site_nid) {
-  $site = hosting_network_rest_call($server_nid, 'hosting_site/get_by_nid', array('nid' => $site_nid), 'POST', $debug);
+  $site = hosting_network_rest_call($server_nid, 'hosting_site/get_by_nid', array('nid' => $site_nid), 'POST');
   $platform = hosting_network_rest_call($server_nid, 'hosting_platform/' . $site->platform);
-  $tasks = hosting_network_get_task_list($server_nid, $site_nid);
+  $tasks = hosting_network_get_task_list($server_nid, $site, TRUE);
 
   if (empty($site)) {
     return '<p>Server unreachable or site doesn\'t exist, please check that the OAuth server settings are correct.</p>';
@@ -178,7 +230,7 @@ function hosting_network_theme($existing, $type, $theme, $path) {
       'variables' => array('platforms' => NULL, 'server_nid' => NULL),
     ),
     'hosting_network_task_list' => array(
-      'variables' => array('tasks' => NULL, 'server_nid' => NULL, 'display_run_buttons' => NULL),
+      'variables' => array('tasks' => NULL, 'server_nid' => NULL, 'target_node' => NULL, 'display_run_buttons' => NULL),
     ),
     'hosting_network_platform_page' => array(
       'variables' => array('server_nid' => NULL, 'platform' => NULL, 'sites' => NULL, 'tasks' => NULL),
@@ -206,7 +258,7 @@ function theme_hosting_network_platform_page($variables) {
   $html .= '<p><strong>Server:</strong> ' . $server->title . '</p>';
   $html .= '<div>';
   $html .= '<p>Tasks</p>';
-  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'display_run_buttons' => TRUE));
+  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'target_node' => $platform, 'display_run_buttons' => TRUE));
   $html .= '</div>';
   $html .= '<div>';
   $html .= '<p>Sites</p>';
@@ -231,7 +283,7 @@ function theme_hosting_network_site_page($variables) {
   $html .= '<p><strong>Platform:</strong> ' . $platform->title . '</p>';
   $html .= '<p><strong>Server:</strong> ' . $server->title . '</p>';
   $html .= '<div>';
-  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'display_run_buttons' => TRUE));
+  $html .= theme('hosting_network_task_list', array('tasks' => $tasks, 'server_nid' => $server_nid, 'target_node' => $site, 'display_run_buttons' => TRUE));
   $html .= '</div>';
   $html .= '<div>';
 
@@ -374,8 +426,22 @@ function hosting_network_get_platform_list($server_nid, $get_site_details = FALS
   return $platforms;
 }
 
-function hosting_network_get_task_list($server_nid, $object_nid) {
-  $tasks = hosting_network_rest_call($server_nid, 'hosting_task/get_task_list', array('nid' => $object_nid), 'POST');
+/**
+ * Gets the list of available tasks with the status of the latest run.
+ *
+ * $object needs to be fully loaded to get the right task handlers.
+ */
+function hosting_network_get_task_list($server_nid, $node, $assign_handlers = TRUE) {
+  $tasks = (array) hosting_network_rest_call($server_nid, 'hosting_task/get_task_list', array('nid' => $node->nid), 'POST');
+
+  $handlers = hosting_network_get_task_handlers($server_nid, $node);
+
+  // We know $handlers isn't empty because we assign some ourselves...
+  foreach ($tasks as $type => $task) {
+    if (isset($handlers[$type])) {
+      $task->hosting_network_handler = $handlers[$type];
+    }
+  }
 
   return (array) $tasks;
 }
@@ -492,6 +558,7 @@ function theme_hosting_network_task_list($variables) {
   $tasks = $variables['tasks'];
   $server_nid = $variables['server_nid'];
   $display_run_buttons = $variables['display_run_buttons'];
+  $target = $variables['target_node'];
 
   $output = '';
 
@@ -521,18 +588,16 @@ function theme_hosting_network_task_list($variables) {
       'data' => $info['title'],
       'class' => array('hosting-status'),
     );
+
     $actions = array();
-
-    // TODO: The buttons, they do nothing.
-
-    if ($display_run_buttons OR TRUE) {
+    if ($display_run_buttons) {
       if (isset($info['task_status']) && ($info['task_status'] == 0)) {
-  //      $actions['cancel'] = _hosting_task_button(t('Cancel'), sprintf("hosting/tasks/%d/cancel", $info['nid']), t("Cancel the task and remove it from the queue"), 'hosting-button-stop', !$info['task_permitted']);
-  //      $actions['cancel'] = _hosting_task_button(t('Cancel'), sprintf("hosting/tasks/%d/cancel", $info['nid']), t("Cancel the task and remove it from the queue"), 'hosting-button-stop', !$info['task_permitted']);
+        $actions['cancel'] = _hosting_task_button(t('Cancel'), '', t("Cancel the task and remove it from the queue"), 'hosting-button-stop', FALSE);
       }
       else {
-  //      $actions['run'] = _hosting_task_button(t('Run'), sprintf("hosting_confirm/%d/%s_%s", 'TODO', 'TODO', $task), '', 'hosting-button-run', $info['task_permitted'], $info['dialog']);
-          $actions['run'] = _hosting_task_button(t('Run'), sprintf("hosting_confirm/%d/%s_%s", 'TODO', 'TODO', $task), '', 'hosting-button-run', FALSE, FALSE);
+        // server/node/target_type/task_type
+        $path = sprintf("hosting_matrix/run/%s/%s/%s/%s", $server_nid, $target->nid, $target->type ,$task) ; 
+        $actions['run'] = _hosting_task_button(t('Run'), $path, '', 'hosting-button-run', $info['task_permitted'], FALSE, TRUE);
       }
     }
 
@@ -631,4 +696,64 @@ function _hosting_network_task_log_table($log) {
   }
 
   return FALSE;
+}
+
+/**
+ * Optional arguments: Form
+ *  * Default behavior, just run without confirmation.
+ *  Form options: confirm OR method
+ *
+ *  Only the handlers for displayed tasks will be used.
+ *
+ * TODO: Gather list on init()?
+ */
+function hosting_network_get_task_handlers($server_nid, $node) {
+  // TODO: hook_task_access ? : NULL = yes, true = yes, false = no... alter?
+  $task_handlers = module_invoke_all('hosting_network_handlers', $server_nid, $node);
+  // TODO
+  //  $task_handlers = module_invoke_all('hosting_network_handlers_alter', $task_handlers, $node); 
+
+  return $task_handlers;
+}
+
+/**
+ * Implements hook_hosting_network_handlers();
+ */
+function hosting_network_hosting_network_handlers($server_nid, $node) {
+  switch ($node->type) {
+    case 'site':
+      $handlers = array(
+        'verify' => 'run',
+        'backup' => 'run',
+        'password_reset' => 'run',
+        'disable' => 'confirm',
+        'delete' => 'confirm',
+      );
+      break;
+    case 'platform':
+      $handlers = array(
+        'verify' => 'run',
+        'lock' => 'run',
+        'unlock' => 'run',
+        'delete' => 'confirm',
+      );
+      break;
+  }
+
+  return $handlers;
+}
+
+/**
+ * @see hosting_task_menu_access_csrf
+ */
+function hosting_network_task_menu_access_csrf() {
+  global $user;
+
+  if ((!isset($_GET['token']) || !drupal_valid_token($_GET['token'], $user->uid))) {
+    return FALSE;
+  }
+  else {
+    // TODO
+    return user_access('administer tasks');
+  }
 }
