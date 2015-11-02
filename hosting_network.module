@@ -16,7 +16,7 @@ function hosting_network_menu() {
     'title' => 'Server Network settings',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_settings'),
-    'access callback' => TRUE,
+    'access arguments' => array('administer hosting network'),
     'type' => MENU_LOCAL_TASK,
   );
 
@@ -24,8 +24,7 @@ function hosting_network_menu() {
     'title' => 'Aegir network',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_nodes_form'),
-    // TODO
-    'access callback' => TRUE,
+    'access arguments' => array('administer hosting network'),
     'menu_name' => 'main-menu',
     'weight' => 20,
   );
@@ -35,8 +34,7 @@ function hosting_network_menu() {
     'title' => 'Aegir network platform',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_platform_page_form', 2, 3),
-    // TODO
-    'access callback' => TRUE,
+    'access arguments' => array('administer hosting network'),
   );
 
   // server/site
@@ -44,8 +42,7 @@ function hosting_network_menu() {
     'title' => 'Aegir network site',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('hosting_network_site_page_form', 2, 3),
-    // TODO
-    'access callback' => TRUE,
+    'access arguments' => array('administer hosting network'),
   );
 
   // server/task
@@ -53,8 +50,7 @@ function hosting_network_menu() {
     'title' => 'Aegir network task',
     'page callback' => 'hosting_network_view_task',
     'page arguments' => array(2, 3),
-    // TODO: Permission
-    'access arguments' => array('access task logs'),
+    'access arguments' => array('administer hosting network'),
   );
 
   // server/node/target_type/task_type
@@ -66,6 +62,18 @@ function hosting_network_menu() {
   );
 
   return $items;
+}
+
+/**
+ * Implements hook_permission()
+ */
+function hosting_network_permission() {
+  return array(
+    'administer hosting network' => array(
+      'title' => t('Administer Aegir network'),
+      'description' => t('Manage Aegir Network sites and platforms.'),
+    ),
+  );
 }
 
 function hosting_network_view_task($server_nid, $task_nid) {
@@ -87,33 +95,52 @@ function hosting_network_run_task_form($form, &$form_state, $server_nid, $target
     $node = hosting_network_rest_call($server_nid, 'hosting_' . $target_type . '/' . $target_nid);
   }
 
-  if ($node) {
+  $server = node_load($server_nid);
+
+  if ($node && $server) {
     $handlers = hosting_network_get_task_handlers($server_nid, $node);
 
-    if (isset($handlers[$task_type])) {
+    if (isset($handlers[$task_type]) && !empty($handlers[$task_type])) {
       $handler = $handlers[$task_type];
 
       switch ($handler) {
         case 'run':
-          $task = hosting_network_rest_call($server_nid, 'hosting_task', array('type' => $task_type, 'nid' => $target_nid), 'POST', $debug);
-
-          if (!empty($task)) {
-            drupal_set_message(t('Task added successfully'));
-          } else {
-            drupal_set_message(t('Task could not be added. Check server settings.'), 'error');
-          }
-
+          _hosting_network_run_and_message($server_nid, $target_nid, $task_type);
           drupal_goto('hosting_network/nodes');
           break;
 
         case 'confirm':
-          // TODO
+          $form['target_nid'] = array(
+            '#type' => 'value',
+            '#value' => $target_nid,
+          );
+          $form['server_nid'] = array(
+            '#type' => 'value',
+            '#value' => $server_nid,
+          );
+          $form['task_type'] = array(
+            '#type' => 'value',
+            '#value' => $task_type,
+          );
+          $question = t("Aegir Network: @task remote object @object on @server?", array('@task' => $task_type, '@object' => $target_nid, '@server' => $server->title));
+          $path = !empty($_REQUEST['destination'])? $_REQUEST['destination']: 'hosting_network/nodes';
+          $form = confirm_form($form, $question, $path, '', $task_type);
+
+          return $form;
           break;
 
         default:
-          // TODO
+          // TODO: Implement task form here. @see hosting_task_confirm_form
+
           break;
       }
+    }
+    else {
+      $form['unhandled'] = array(
+        '#markup' => t('Task "@task" has not yet been implemented for this object type.', array('@task' => $task_type)),
+      );
+
+      return $form;
     }
   }
   else {
@@ -121,6 +148,29 @@ function hosting_network_run_task_form($form, &$form_state, $server_nid, $target
   }
 
   return $form;
+}
+
+function hosting_network_run_task_form_submit(&$form, &$form_state) {
+  $server_nid = $form['server_nid']['#value'];
+  $target_nid = $form['target_nid']['#value'];
+  $task_type = $form['task_type']['#value'];
+
+  _hosting_network_run_and_message($server_nid, $target_nid, $task_type);
+  
+  drupal_goto('hosting_network/nodes');
+}
+
+/**
+ * Helper function to run a simple task and display the appropriate message.
+ */
+function _hosting_network_run_and_message($server_nid, $target_nid, $task_type, &$debug = array()) {
+  $task = hosting_network_rest_call($server_nid, 'hosting_task', array('type' => $task_type, 'nid' => $target_nid), 'POST', $debug);
+
+  if (!empty($task)) {
+    drupal_set_message(t('Task @task added successfully', array('@task' => $task_type)));
+  } else {
+    drupal_set_message(t('Task @task could not be added. Check server settings.', array('@task' => $task_type)), 'error');
+  }
 }
 
 /**
@@ -700,24 +750,30 @@ function _hosting_network_task_log_table($log) {
 
 /**
  * Optional arguments: Form
- *  * Default behavior, just run without confirmation.
- *  Form options: confirm OR method
+ *  Form options: run, confirm OR method
+ *
+ *  * run just runs the task without asking for confirmation.
+ *  * confirm displays a "ok/cancel" style confirmation page.
+ *  * anything else (except empty) is considered the method to get the
+ *    (underedred) form for confirmation.
+ *  * task types without a handler will display a message instead of running.
  *
  *  Only the handlers for displayed tasks will be used.
  *
- * TODO: Gather list on init()?
+ * @see hosting_network_hosting_network_handlers().
  */
 function hosting_network_get_task_handlers($server_nid, $node) {
-  // TODO: hook_task_access ? : NULL = yes, true = yes, false = no... alter?
   $task_handlers = module_invoke_all('hosting_network_handlers', $server_nid, $node);
-  // TODO
-  //  $task_handlers = module_invoke_all('hosting_network_handlers_alter', $task_handlers, $node);
+
+  // TODO: hook_alter to allow modifications to the basic handlers.
 
   return $task_handlers;
 }
 
 /**
  * Implements hook_hosting_network_handlers();
+ *
+ * @see hosting_network_get_task_handlers().
  */
 function hosting_network_hosting_network_handlers($server_nid, $node) {
   switch ($node->type) {
@@ -728,6 +784,7 @@ function hosting_network_hosting_network_handlers($server_nid, $node) {
         'password_reset' => 'run',
         'disable' => 'confirm',
         'delete' => 'confirm',
+        'enable' => 'confirm',
       );
       break;
     case 'platform':
@@ -753,7 +810,6 @@ function hosting_network_task_menu_access_csrf() {
     return FALSE;
   }
   else {
-    // TODO
-    return user_access('administer tasks');
+    return user_access('administer hosting network');
   }
 }
